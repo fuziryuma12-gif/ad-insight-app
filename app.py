@@ -33,7 +33,6 @@ if uploaded_file is not None:
         if col in df_clean.columns:
             df_clean[col] = df_clean[col].fillna(0)
 
-    # 判定結果を入れるリスト
     processed_data = []
 
     for index, row in enumerate(df_clean.to_dict('records'), start=1):
@@ -64,34 +63,32 @@ if uploaded_file is not None:
             judgement = "予算超過/停止推奨"
             comment = "CPAが3万円を超えている、もしくはCVゼロで3万円以上消化しています。"
 
-        # エクセルの「クリエイティブ別」シートの列順に合わせる
+        # ★今回いただいた中西様邸のフォーマット（全14列）に合わせました★
         row_data = [
             index,           # 1: No
-            ad_name,         # 2: クリエイティブ
-            "",              # 3: 訴求軸（空白）
-            "",              # 4: 表現（空白）
-            reach,           # 5: リーチ
-            freq,            # 6: フリークエンシー
-            imps,            # 7: インプレッション
-            round(cpm, 0),   # 8: CPM
-            clicks,          # 9: リンククリック数
-            round(ctr, 2),   # 10: CTR
-            round(cpc, 0),   # 11: CPC
-            judgement,       # 12: 判定
-            comment          # 13: コメント
+            ad_name,         # 2: クリエイティブ名
+            reach,           # 3: リーチ
+            freq,            # 4: フリークエンシー(FQ)
+            imps,            # 5: インプレッション
+            spend,           # 6: 消化金額(円)
+            round(cpm, 0),   # 7: CPM(円)
+            clicks,          # 8: リンククリック数
+            round(ctr, 2),   # 9: CTR(リンク)
+            round(cpc, 0),   # 10: CPC(リンク,円)
+            cv,              # 11: 結果(CV)
+            round(cpa, 0),   # 12: 結果の単価(CPA,円)
+            judgement,       # 13: 判定
+            comment          # 14: コメント
         ]
         processed_data.append(row_data)
 
-    # 画面上での確認用テーブル表示
     st.subheader('📊 判定結果プレビュー')
-    preview_df = pd.DataFrame(processed_data, columns=["No", "クリエイティブ", "訴求軸", "表現", "リーチ", "フリークエンシー", "インプレッション", "CPM", "リンククリック", "CTR", "CPC", "判定", "コメント"])
+    preview_df = pd.DataFrame(processed_data, columns=["No", "クリエイティブ名", "リーチ", "FQ", "IMP", "消化金額", "CPM", "クリック", "CTR", "CPC", "CV", "CPA", "判定", "コメント"])
     st.dataframe(preview_df, use_container_width=True)
 
-    # --- エクセルテンプレートへの書き込み処理 ---
     try:
-        # GitHubにアップロードした template.xlsx を読み込む
         wb = openpyxl.load_workbook("template.xlsx")
-        ws = wb["クリエイティブ別"] # 書き込むシート名
+        ws = wb["クリエイティブ別"] 
 
         # 4行目からデータを書き込む
         start_row = 4
@@ -99,12 +96,10 @@ if uploaded_file is not None:
             for c_idx, val in enumerate(row_data):
                 ws.cell(row=start_row + r_idx, column=c_idx + 1, value=val)
 
-        # メモリ上にエクセルファイルを保存
         excel_buffer = io.BytesIO()
         wb.save(excel_buffer)
         excel_buffer.seek(0)
 
-        # エクセルダウンロードボタン
         st.download_button(
             label="📥 判定結果のエクセル(.xlsx)をダウンロード",
             data=excel_buffer,
