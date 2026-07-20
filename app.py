@@ -2,25 +2,66 @@ import streamlit as st
 import pandas as pd
 import io
 import openpyxl
+from openpyxl.styles import Border, Side
+import os
 
-# --- パスワードロック機能 ---
-password = st.text_input("パスワードを入力してください", type="password")
+# ==========================================
+# 🔐 パスワード管理機能
+# ==========================================
+PW_FILE = "password.txt"
 
-if password != "secret1234":
-    st.warning("正しいパスワードを入力してください。")
+def get_password():
+    if os.path.exists(PW_FILE):
+        with open(PW_FILE, "r") as f:
+            return f.read().strip()
+    return "secret1234" # 初期パスワード
+
+def set_password(new_pw):
+    with open(PW_FILE, "w") as f:
+        f.write(new_pw)
+
+current_password = get_password()
+
+# ページ設定
+st.set_page_config(layout="wide")
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+# 未ログイン時の画面
+if not st.session_state.logged_in:
+    password_input = st.text_input("パスワードを入力してください", type="password")
+    if password_input:
+        if password_input == current_password:
+            st.session_state.logged_in = True
+            st.rerun()
+        else:
+            st.warning("正しいパスワードを入力してください。")
     st.stop()
 
-# --- 認証成功後 ---
+# ==========================================
+# 📱 メインアプリ画面（ログイン成功後）
+# ==========================================
 st.success("ログイン成功！")
-st.set_page_config(layout="wide")
+
+# ⚙️ パスワード変更UI（アコーディオン）
+with st.expander("⚙️ パスワードの変更（管理者用）", expanded=False):
+    new_password = st.text_input("新しいパスワードを入力してください", type="password")
+    if st.button("パスワードを更新"):
+        if new_password:
+            set_password(new_password)
+            st.success("パスワードを変更しました！次回のログインから有効になります。")
+        else:
+            st.error("パスワードを入力してください。")
 
 st.title('🤖 クラフィットハウス | 広告パフォーマンス自動判定')
 
-with st.expander("📖 クラフィットハウス 広告・LP評価基準まとめ（ここをクリックで開閉）", expanded=False):
-    st.markdown("※必要に応じてここに評価基準を表示できます（省略）")
+with st.expander("📖 クラフィットハウス 広告・LP評価基準まとめ", expanded=False):
+    st.markdown("※必要に応じてここに評価基準を表示できます")
 
 st.write("---")
 
+# CSVアップロード
 uploaded_file = st.file_uploader("Facebook広告のCSVをアップロードしてください", type='csv')
 
 if uploaded_file is not None:
@@ -63,22 +104,10 @@ if uploaded_file is not None:
             judgement = "予算超過/停止推奨"
             comment = "CPAが3万円を超えている、もしくはCVゼロで3万円以上消化しています。"
 
-        # ★今回いただいた中西様邸のフォーマット（全14列）に合わせました★
+        # 中西様邸フォーマット
         row_data = [
-            index,           # 1: No
-            ad_name,         # 2: クリエイティブ名
-            reach,           # 3: リーチ
-            freq,            # 4: フリークエンシー(FQ)
-            imps,            # 5: インプレッション
-            spend,           # 6: 消化金額(円)
-            round(cpm, 0),   # 7: CPM(円)
-            clicks,          # 8: リンククリック数
-            round(ctr, 2),   # 9: CTR(リンク)
-            round(cpc, 0),   # 10: CPC(リンク,円)
-            cv,              # 11: 結果(CV)
-            round(cpa, 0),   # 12: 結果の単価(CPA,円)
-            judgement,       # 13: 判定
-            comment          # 14: コメント
+            index, ad_name, reach, freq, imps, spend, round(cpm, 0), 
+            clicks, round(ctr, 2), round(cpc, 0), cv, round(cpa, 0), judgement, comment
         ]
         processed_data.append(row_data)
 
@@ -86,27 +115,44 @@ if uploaded_file is not None:
     preview_df = pd.DataFrame(processed_data, columns=["No", "クリエイティブ名", "リーチ", "FQ", "IMP", "消化金額", "CPM", "クリック", "CTR", "CPC", "CV", "CPA", "判定", "コメント"])
     st.dataframe(preview_df, use_container_width=True)
 
+    # ==========================================
+    # 📝 エクセル出力＆ダウンロード機能
+    # ==========================================
+    st.write("---")
+    st.subheader("📥 レポートのダウンロード")
+    
+    # 1. ファイル名の入力欄
+    output_filename = st.text_input("出力するファイル名を入力してください", value="中西様邸_広告パフォーマンスレポート")
+
     try:
         wb = openpyxl.load_workbook("template.xlsx")
         ws = wb["クリエイティブ別"] 
 
-        # 4行目からデータを書き込む
+        # 罫線の設定（実線）
+        thin_border = Border(
+            left=Side(style='thin'), right=Side(style='thin'), 
+            top=Side(style='thin'), bottom=Side(style='thin')
+        )
+
+        # 4行目からデータを書き込み、同時に罫線を引く
         start_row = 4
         for r_idx, row_data in enumerate(processed_data):
             for c_idx, val in enumerate(row_data):
-                ws.cell(row=start_row + r_idx, column=c_idx + 1, value=val)
+                cell = ws.cell(row=start_row + r_idx, column=c_idx + 1, value=val)
+                cell.border = thin_border # ★ここでセルに線を引いています
 
         excel_buffer = io.BytesIO()
         wb.save(excel_buffer)
         excel_buffer.seek(0)
 
+        # 2. 入力されたファイル名でダウンロード
         st.download_button(
-            label="📥 判定結果のエクセル(.xlsx)をダウンロード",
+            label="📊 エクセル(.xlsx)をダウンロード",
             data=excel_buffer,
-            file_name="広告パフォーマンス自動判定.xlsx",
+            file_name=f"{output_filename}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     except FileNotFoundError:
-        st.error("⚠️ テンプレートファイルが見つかりません。GitHubに `template.xlsx` という名前でファイルがアップロードされているか確認してください。")
+        st.error("⚠️ テンプレートファイルが見つかりません。GitHubに `template.xlsx` がアップロードされているか確認してください。")
     except KeyError:
-        st.error("⚠️ エクセルの中に「クリエイティブ別」という名前のシートが見つかりません。テンプレートの内容を確認してください。")
+        st.error("⚠️ エクセルの中に「クリエイティブ別」というシートが見つかりません。")
